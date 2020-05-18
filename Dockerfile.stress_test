@@ -1,0 +1,17 @@
+FROM golang:1.12 as builder
+ENV PATH /go/bin:/usr/local/go/bin:$PATH
+ENV GOPATH /go
+COPY . /go/src/github.com/virtual-kubelet/virtual-kubelet
+WORKDIR /go/src/github.com/virtual-kubelet/virtual-kubelet
+ARG BUILD_TAGS=""
+RUN make VK_BUILD_TAGS="${BUILD_TAGS}" build
+RUN cp bin/virtual-kubelet /usr/bin/virtual-kubelet
+
+FROM ubuntu:18.04
+RUN apt update
+RUN apt install -y openssl uuid gettext-base ca-certificates
+COPY --from=builder /usr/bin/virtual-kubelet /usr/bin/virtual-kubelet
+WORKDIR /root
+COPY ./cmd/virtual-kubelet/internal/commands/stress/scripts .
+COPY ./scripts/stress-test.sh .
+ENTRYPOINT ./stress-test.sh $KAAS_URI $ACCOUNT_ID $NODES

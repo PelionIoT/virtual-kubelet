@@ -27,6 +27,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/virtual-kubelet/virtual-kubelet/cmd/virtual-kubelet/internal/commands/providers"
 	"github.com/virtual-kubelet/virtual-kubelet/cmd/virtual-kubelet/internal/commands/root"
+	"github.com/virtual-kubelet/virtual-kubelet/cmd/virtual-kubelet/internal/commands/stress"
 	"github.com/virtual-kubelet/virtual-kubelet/cmd/virtual-kubelet/internal/commands/version"
 	"github.com/virtual-kubelet/virtual-kubelet/cmd/virtual-kubelet/internal/provider"
 	"github.com/virtual-kubelet/virtual-kubelet/log"
@@ -57,17 +58,25 @@ func main() {
 	optsErr := root.SetDefaultOpts(&opts)
 	opts.Version = strings.Join([]string{k8sVersion, "vk", buildVersion}, "-")
 
+	var stressOpts stress.Opts
+	stressOptsErr := stress.SetDefaultOpts(&stressOpts)
+	stressOpts.Version = strings.Join([]string{k8sVersion, "vk", buildVersion}, "-")
+
 	s := provider.NewStore()
 	registerMock(s)
 
 	rootCmd := root.NewCommand(ctx, filepath.Base(os.Args[0]), s, opts)
 	rootCmd.AddCommand(version.NewCommand(buildVersion, buildTime), providers.NewCommand(s))
+	rootCmd.AddCommand(stress.NewCommand(ctx, s, stressOpts))
 	preRun := rootCmd.PreRunE
 
 	var logLevel string
 	rootCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
 		if optsErr != nil {
 			return optsErr
+		}
+		if stressOptsErr != nil {
+			return stressOptsErr
 		}
 		if preRun != nil {
 			return preRun(cmd, args)

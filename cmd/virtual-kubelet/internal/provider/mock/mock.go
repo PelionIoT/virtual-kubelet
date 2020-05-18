@@ -101,6 +101,9 @@ func loadConfig(providerConfig, nodeName string) (config MockConfig, err error) 
 	if err != nil {
 		return config, err
 	}
+	config.CPU = defaultCPUCapacity
+	config.Memory = defaultMemoryCapacity
+	config.Pods = defaultPodCapacity
 	configMap := map[string]MockConfig{}
 	err = json.Unmarshal(data, &configMap)
 	if err != nil {
