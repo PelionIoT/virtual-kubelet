@@ -6,13 +6,13 @@ clusters:
 contexts:
 - context:
     cluster: kaas
-    user: $DEVICE_ID
+    user: kubelet
   name: kaas
 current-context: kaas
 kind: Config
 preferences: {}
 users:
-- name: $DEVICE_ID
+- name: kubelet
   user:
     client-certificate-data: $CLIENT_CERT
     client-key-data: $CLIENT_KEY

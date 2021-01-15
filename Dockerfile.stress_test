@@ -1,4 +1,4 @@
-FROM golang:1.12 as builder
+FROM golang:1.15 as builder
 ENV PATH /go/bin:/usr/local/go/bin:$PATH
 ENV GOPATH /go
 COPY . /go/src/github.com/virtual-kubelet/virtual-kubelet
@@ -6,12 +6,17 @@ WORKDIR /go/src/github.com/virtual-kubelet/virtual-kubelet
 ARG BUILD_TAGS=""
 RUN make VK_BUILD_TAGS="${BUILD_TAGS}" build
 RUN cp bin/virtual-kubelet /usr/bin/virtual-kubelet
+RUN go build ./cmd/lwm2m-bootstrapper
+RUN cp lwm2m-bootstrapper /usr/bin/lwm2m-bootstrapper
 
 FROM ubuntu:18.04
 RUN apt update
-RUN apt install -y openssl uuid gettext-base ca-certificates
+RUN apt install -y openssl uuid gettext-base ca-certificates curl jq
+# Fix for "139752666972608:error:2406F079:random number generator:RAND_load_file:Cannot open file:../crypto/rand/randfile.c:88:Filename=/root/.rnd"
+RUN openssl rand -out ~/.rnd -writerand ~/.rnd
 COPY --from=builder /usr/bin/virtual-kubelet /usr/bin/virtual-kubelet
+COPY --from=builder /usr/bin/lwm2m-bootstrapper /usr/bin/lwm2m-bootstrapper
 WORKDIR /root
 COPY ./cmd/virtual-kubelet/internal/commands/stress/scripts .
 COPY ./scripts/stress-test.sh .
-ENTRYPOINT ./stress-test.sh $KAAS_URI $ACCOUNT_ID $NODES
+ENTRYPOINT ["./stress-test.sh"]
