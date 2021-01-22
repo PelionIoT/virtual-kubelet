@@ -51,6 +51,13 @@ openssl ecparam -out CA_private.pem -name prime256v1 -genkey
 openssl req -key CA_private.pem -new -sha256 -x509 -days 12775 -out CA_cert.pem -config ca.cnf -extensions ext
 )
 
+# If a certificate with the same name exists delete it so the upload doesn't fail
+echo "Checking for conflicting CA"
+if CERT_ID_OLD="$(curl -X GET -s -S --fail "$API_HOST/v3/trusted-certificates?name__eq=$CA_UPLOAD_NAME"  -H "Authorization: Bearer $ACCESS_KEY" | jq -e -r ".data[0].id")"; then
+    echo "Deleting conflicting CA \"$CERT_ID_OLD\""
+    curl -X DELETE -s -S --fail "$API_HOST/v3/trusted-certificates/$CERT_ID_OLD" -H "Authorization: Bearer $ACCESS_KEY"
+fi
+
 # Upload bootstrap CA
 echo "Uploading bootstrap CA"
 CA_CERT_DATA="$(cat "$CA_DIR/CA_cert.pem")"
