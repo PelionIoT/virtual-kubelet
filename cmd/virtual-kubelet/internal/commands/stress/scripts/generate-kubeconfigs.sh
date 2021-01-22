@@ -103,13 +103,22 @@ while [ "$N" -gt 0 ]; do
 
     # Bootstrap in the background
     (
-    lwm2m-bootstrapper --mode bootstrap  \
+    RETRIES_MAX=5
+    RETRIES=0
+    until lwm2m-bootstrapper --mode bootstrap  \
     --coap-cert "$BOOTSTRAP_CERT_FILE" --coap-key "$BOOTSTRAP_KEY_FILE" --coap-url "$BOOTSTRAP_URL" \
     --dump-cert "$KUBE_CERT_FILE" --dump-key "$KUBE_KEY_FILE" > /dev/null 2> /dev/null
+    do
+        if [ "$RETRIES" -ge "$RETRIES_MAX" ]; then
+            exit "$RETRIES"
+        fi
+        RETRIES=$(( RETRIES + 1 ))
+    done
 
     export CLIENT_CERT="$(cat "$KUBE_CERT_FILE" | base64 -w0)"
     export CLIENT_KEY="$(cat "$KUBE_KEY_FILE" | base64 -w0)"
     echo "$(cat kubeconfig.yaml.tpl | envsubst)" > $OUT_DIR/$ENDPOINT_NAME.kubeconfig
+    exit "$RETRIES"
     )&
     job_add "$ENDPOINT_NAME" "$!"
 
