@@ -21,6 +21,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
@@ -72,17 +73,49 @@ func runStressCommand(ctx context.Context, s *provider.Store, c Opts) error {
 		return errdefs.InvalidInput("pod sync workers must be greater than 0")
 	}
 
-	kubeconfigs, err := getKubeconfigs(c.KubeConfigsPath)
+	if c.KubeConfigsPath != "" {
+		kubeconfigs, err := getKubeconfigs(c.KubeConfigsPath)
 
-	if err != nil {
-		return errors.Wrap(err, "error listing kubeconfigs")
-	}
-	for nodeName, kubeconfig := range kubeconfigs {
-		go func(ctx context.Context, nodeName string, kubeconfigPath string, s *provider.Store, c Opts) {
-			if err := runNode(ctx, nodeName, kubeconfigPath, s, c); err != nil {
-				log.G(ctx).Errorf("error starting up node %s: %s", nodeName, err)
+		if err != nil {
+			return errors.Wrap(err, "error listing kubeconfigs")
+		}
+		for nodeName, kubeconfig := range kubeconfigs {
+			client, err := newClient(kubeconfig)
+			if err != nil {
+				log.G(ctx).Errorf("error making Clientset for node %s: %s", nodeName, err)
+				continue
 			}
-		}(ctx, nodeName, kubeconfig, s, c)
+			go func(ctx context.Context, nodeName string, client *kubernetes.Clientset, s *provider.Store, c Opts) {
+				if err := runNode(ctx, nodeName, client, s, c); err != nil {
+					log.G(ctx).Errorf("error starting up node %s: %s", nodeName, err)
+				}
+			}(ctx, nodeName, client, s, c)
+		}
+	} else if c.KubeApiServer != "" && c.KubeTLSCertPath != "" && c.KubeTLSKeyPath != "" && c.TotalNodeCnt > 0 {
+		log.G(ctx).Infof("Running %d nodes\n", c.TotalNodeCnt)
+		keyBytes, errKey := ioutil.ReadFile(c.KubeTLSKeyPath)
+		crtBytes, errCrt := ioutil.ReadFile(c.KubeTLSCertPath)
+		if errKey != nil || errCrt != nil {
+			return fmt.Errorf("errKey : %v\n errCrt:%v", errKey, errCrt)
+		}
+		for i := 0; i < c.TotalNodeCnt; i++ {
+			nodeName := fmt.Sprintf("virtualkubelet%d", i)
+			log.G(ctx).Infof("Starting up node %s", nodeName)
+			client, err := newClientFromCertKey(c.KubeApiServer, crtBytes, keyBytes)
+			if err != nil {
+				log.G(ctx).Errorf("error making Clientset for node %s: %s", nodeName, err)
+				continue
+			}
+			go func(ctx context.Context, nodeName string, client *kubernetes.Clientset, s *provider.Store, c Opts) {
+				if err := runNode(ctx, nodeName, client, s, c); err != nil {
+					log.G(ctx).Errorf("error starting up node %s: %s", nodeName, err)
+				}
+			}(ctx, nodeName, client, s, c)
+			time.Sleep(100 * time.Millisecond)
+		}
+		log.G(ctx).Infof("Done Initializing %d nodes\n", c.TotalNodeCnt)
+	} else {
+		log.G(ctx).Errorf("Cannot find a valid config for running stress")
 	}
 
 	<-ctx.Done()
@@ -90,13 +123,33 @@ func runStressCommand(ctx context.Context, s *provider.Store, c Opts) error {
 	return nil
 }
 
+
+func newClientFromCertKey(apiServer string, tlsClientCert []byte, tlsClientKey []byte) (*kubernetes.Clientset, error) {	
+	var config *rest.Config
+	ctx := context.Background()
+
+	config = &rest.Config{}
+	config.Host = apiServer
+	config.TLSClientConfig.CertData = tlsClientCert
+	config.TLSClientConfig.KeyData =  tlsClientKey
+	log.G(ctx).Debugf("config: %+v\n", config)
+
+	if masterURI := os.Getenv("MASTER_URI"); masterURI != "" {
+		config.Host = masterURI
+	}
+
+	return kubernetes.NewForConfig(config)
+}
+
 func newClient(configPath string) (*kubernetes.Clientset, error) {
 	var config *rest.Config
+	ctx := context.Background()
 
 	// Check if the kubeConfig file exists.
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
 		// Get the kubeconfig from the filepath.
 		config, err = clientcmd.BuildConfigFromFlags("", configPath)
+		log.G(ctx).Debugf("config: %+v\n", config)
 		if err != nil {
 			return nil, errors.Wrap(err, "error building client config")
 		}
@@ -139,7 +192,7 @@ func getKubeconfigs(dir string) (map[string]string, error) {
 	return kubeconfigs, nil
 }
 
-func runNode(ctx context.Context, nodeName string, kubeconfigPath string, s *provider.Store, c Opts) error {
+func runNode(ctx context.Context, nodeName string, client	*kubernetes.Clientset, s *provider.Store, c Opts) error {
 	var taint *corev1.Taint
 	if !c.DisableTaint {
 		var err error
@@ -147,12 +200,6 @@ func runNode(ctx context.Context, nodeName string, kubeconfigPath string, s *pro
 		if err != nil {
 			return err
 		}
-	}
-
-	fmt.Printf("Create client for node %s from %s\n", nodeName, kubeconfigPath)
-	client, err := newClient(kubeconfigPath)
-	if err != nil {
-		return err
 	}
 
 	// Create a shared informer factory for Kubernetes pods in the current namespace (if specified) and scheduled to the current node.

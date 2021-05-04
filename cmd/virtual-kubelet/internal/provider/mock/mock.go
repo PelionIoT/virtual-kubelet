@@ -97,29 +97,33 @@ func NewMockProvider(providerConfig, nodeName, operatingSystem string, internalI
 
 // loadConfig loads the given json configuration files.
 func loadConfig(providerConfig, nodeName string) (config MockConfig, err error) {
-	data, err := ioutil.ReadFile(providerConfig)
-	if err != nil {
-		return config, err
-	}
-	config.CPU = defaultCPUCapacity
-	config.Memory = defaultMemoryCapacity
-	config.Pods = defaultPodCapacity
-	configMap := map[string]MockConfig{}
-	err = json.Unmarshal(data, &configMap)
-	if err != nil {
-		return config, err
-	}
-	if _, exist := configMap[nodeName]; exist {
-		config = configMap[nodeName]
-		if config.CPU == "" {
-			config.CPU = defaultCPUCapacity
+	if providerConfig != "" {
+		data, err := ioutil.ReadFile(providerConfig)
+		if err != nil {
+			return config, err
 		}
-		if config.Memory == "" {
-			config.Memory = defaultMemoryCapacity
+		
+		configMap := map[string]MockConfig{}
+		err = json.Unmarshal(data, &configMap)
+		if err != nil {
+			return config, err
 		}
-		if config.Pods == "" {
-			config.Pods = defaultPodCapacity
+		if _, exist := configMap[nodeName]; exist {
+			config = configMap[nodeName]
+			if config.CPU == "" {
+				config.CPU = defaultCPUCapacity
+			}
+			if config.Memory == "" {
+				config.Memory = defaultMemoryCapacity
+			}
+			if config.Pods == "" {
+				config.Pods = defaultPodCapacity
+			}
 		}
+	} else {
+		config.CPU = defaultCPUCapacity
+		config.Memory = defaultMemoryCapacity
+		config.Pods = defaultPodCapacity
 	}
 
 	if _, err = resource.ParseQuantity(config.CPU); err != nil {

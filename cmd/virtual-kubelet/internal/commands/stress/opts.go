@@ -59,6 +59,11 @@ type Opts struct {
 	// Node name to use when creating a node in Kubernetes
 	NodeName string
 
+	KubeTLSKeyPath string
+	KubeTLSCertPath string
+	KubeApiServer string
+	TotalNodeCnt int
+
 	// Operating system to run pods for
 	OperatingSystem string
 
